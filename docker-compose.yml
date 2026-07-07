@@ -68,22 +68,7 @@ services:
       redis:
         condition: service_healthy
 
-  n8n:
-    image: docker.n8n.io/n8nio/n8n:latest
-    container_name: avukat-n8n
-    restart: always
-    ports:
-      - "5678:5678"
-    environment:
-      - N8N_HOST=${N8N_HOST:-localhost}
-      - N8N_PORT=5678
-      - N8N_PROTOCOL=http
-      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678}
-      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
-    volumes:
-      - n8ndata:/home/node/.n8n
-    depends_on:
-      - postgres
+
 
   db-backup:
     build:
@@ -106,4 +91,3 @@ services:
 
 volumes:
   pgdata:
-  n8ndata:
