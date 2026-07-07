@@ -1,0 +1,32 @@
+FROM alpine:3.19
+
+# Install system dependencies
+RUN apk add --no-cache \
+    curl \
+    python3 \
+    bash \
+    libc6-compat \
+    postgresql16-client \
+    tzdata
+
+# Set timezone (optional but recommended for cron timestamps)
+ENV TZ=Europe/Istanbul
+
+# Install Google Cloud CLI
+RUN curl -sSL https://sdk.cloud.google.com | bash -s -- --install-dir=/usr/local --disable-prompts
+
+# Add gcloud to path
+ENV PATH="/usr/local/google-cloud-sdk/bin:${PATH}"
+
+# Prepare folders
+RUN mkdir -p /scripts /secrets
+WORKDIR /scripts
+
+# Copy scripts
+COPY ./scripts/db-backup.sh /scripts/db-backup.sh
+COPY ./scripts/entrypoint-backup.sh /scripts/entrypoint-backup.sh
+
+# Make executable
+RUN chmod +x /scripts/db-backup.sh /scripts/entrypoint-backup.sh
+
+ENTRYPOINT ["/scripts/entrypoint-backup.sh"]

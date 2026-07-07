@@ -1,0 +1,137 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum CaseStatus {
+  ACTIVE
+  CLOSED
+  PENDING
+  APPEAL
+}
+
+enum HearingStatus {
+  SCHEDULED
+  COMPLETED
+  POSTPONED
+  CANCELLED
+}
+
+enum NotificationType {
+  REMINDER_7D
+  REMINDER_3D
+  REMINDER_1D
+  CUSTOM
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum PendingCaseStatus {
+  PENDING_CONFIRMATION
+  CONFIRMED
+  DISCARDED
+}
+
+model Lawyer {
+  id             String         @id @default(uuid())
+  fullName       String         @map("full_name")
+  tcNo           String?        @unique @map("tc_no")
+  barNumber      String?        @unique @map("bar_number")
+  email          String?
+  phone          String?
+  telegramChatId String         @unique @map("telegram_chat_id")
+  cases          Case[]
+  notifications  Notification[]
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  @@map("lawyers")
+}
+
+model Client {
+  id        String   @id @default(uuid())
+  fullName  String   @map("full_name")
+  tcNo      String?  @unique @map("tc_no")
+  email     String?
+  phone     String?
+  address   String?
+  notes     String?
+  cases     Case[]
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("clients")
+}
+
+model Case {
+  id              String            @id @default(uuid())
+  caseNumber      String            @unique @map("case_number")
+  courtName       String?           @map("court_name")
+  caseType        String?           @map("case_type")
+  description     String?
+  status          CaseStatus        @default(ACTIVE)
+  filingDate      DateTime?         @map("filing_date")
+  lawyerId        String            @map("lawyer_id")
+  lawyer          Lawyer            @relation(fields: [lawyerId], references: [id])
+  clientId        String            @map("client_id")
+  client          Client            @relation(fields: [clientId], references: [id])
+  documentType    String?           @map("document_type")
+  confidenceLevel String?           @map("confidence_level")
+  rawGeminiOutput Json?             @map("raw_gemini_output")
+  hearings        Hearing[]
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  @@map("cases")
+}
+
+model Hearing {
+  id            String         @id @default(uuid())
+  caseId        String         @map("case_id")
+  case          Case           @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  hearingDate   DateTime       @map("hearing_date")
+  location      String?
+  notes         String?
+  status        HearingStatus  @default(SCHEDULED)
+  notifications Notification[]
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  @@map("hearings")
+}
+
+model Notification {
+  id        String             @id @default(uuid())
+  hearingId String             @map("hearing_id")
+  hearing   Hearing            @relation(fields: [hearingId], references: [id], onDelete: Cascade)
+  lawyerId  String             @map("lawyer_id")
+  lawyer    Lawyer             @relation(fields: [lawyerId], references: [id])
+  type      NotificationType
+  status    NotificationStatus @default(PENDING)
+  sentAt    DateTime?          @map("sent_at")
+  message   String
+  createdAt DateTime           @default(now()) @map("created_at")
+
+  @@map("notifications")
+}
+
+model PendingCase {
+  id                String            @id @default(uuid())
+  telegramChatId    String            @map("telegram_chat_id")
+  telegramMessageId String?           @map("telegram_message_id")
+  rawInputText      String?           @map("raw_input_text")
+  parsedData        Json              @map("parsed_data")
+  status            PendingCaseStatus @default(PENDING_CONFIRMATION)
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  @@map("pending_cases")
+}

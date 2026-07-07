@@ -1,0 +1,483 @@
+{
+  "name": "Avukatlık Sistemi - Telegram Evrak Girişi ve Onay Akışı",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message",
+          "callback_query"
+        ],
+        "additionalFields": {
+          "download": true
+        }
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -200,
+        200
+      ],
+      "id": "telegram-trigger",
+      "name": "Telegram Trigger",
+      "credentials": {
+        "telegramApi": {
+          "id": "X4L9LM9ulXBwlrav",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "is-callback",
+              "leftValue": "={{ $json.callback_query ? 'callback' : 'message' }}",
+              "rightValue": "callback",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        20,
+        200
+      ],
+      "id": "route-trigger-type",
+      "name": "Callback mi, Mesaj mı?"
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "text": "Sen bir Türk hukuk bürosu için belge veri çıkarma asistanısın. Sana gönderilen\ngörsel bir hukuki belge olabilir: tebligat zarfı/mazbatası, duruşma davetiyesi,\ndilekçe veya UYAP çıktısı.\n\nGÖREVİN: Bu görselden aşağıdaki bilgileri çıkarıp SADECE geçerli bir JSON\nnesnesi döndürmek. Hiçbir açıklama, giriş cümlesi, yorum veya markdown kod\nbloğu ekleme — çıktın doğrudan JSON.parse() ile işlenecek.\n\nJSON ŞEMASI:\n{\n  \"belge_turu\": \"Tebligat\" | \"Duruşma Davetiyesi\" | \"Dilekçe\" | \"Diğer\" | null,\n  \"dosya_no\": string | null,\n  \"mahkeme_kurum\": string | null,\n  \"onemli_tarih\": \"YYYY-MM-DD\" formatında string | null,\n  \"tarih_aciklamasi\": string (bu tarih neyi ifade ediyor: tebliğ tarihi,\n    duruşma tarihi, son başvuru tarihi vb.),\n  \"sure_turu\": string | null (belgede belirtilmişse: itiraz süresi,\n    cevap süresi, temyiz süresi vb.),\n  \"taraf_bilgisi\": string | null,\n  \"guven_seviyesi\": \"yüksek\" | \"orta\" | \"düşük\",\n  \"belirsiz_alanlar\": [net okunamayan alan isimlerinin listesi],\n  \"notlar\": string | null (dikkat çekici ek bilgi varsa)\n}\n\nKURALLAR:\n- Bir tarihi net okuyamıyorsan ASLA TAHMİN ETME. null bırak ve\n  belirsiz_alanlar listesine \"onemli_tarih\" ekle.\n- El yazısı, bulanık veya kısmen kesik görünen alanlar için\n  guven_seviyesi değerini düşür.\n- Belgede birden fazla tarih varsa, hukuki açıdan en kritik olanı\n  (itiraz/tebliğ/başvuru tarihi) onemli_tarih alanına yaz, diğerlerini\n  notlar alanına ekle.\n- Sadece belgede yazılı olanı çıkar; yorum katma, hukuki değerlendirme\n  veya tavsiye verme.\n- Çıktı SADECE JSON olsun, başka hiçbir metin ekleme.\n- guven_seviyesi'ni SADECE net okunabilen alanlara göre değil, belgenin\n  GENELİNE göre belirle. Açıklama, delil veya herhangi bir bölümde\n  anlamsız/bozuk/tutarsız metin fark edersen, bu durumu notlar alanına\n  yazman yetmez — guven_seviyesi'ni en az \"orta\" seviyesine düşür ve\n  ilgili bölüm adını belirsiz_alanlar listesine ekle.",
+        "inputType": "binary",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        40
+      ],
+      "id": "analyze-image-gemini",
+      "name": "Analyze Document Image",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "p0ORWdq8AkMKzuZ7",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.item.json.content.parts[0].text;\nconst cleaned = raw.replace(/```json|```/g, '').trim();\n\nlet data;\ntry {\n  data = JSON.parse(cleaned);\n} catch (e) {\n  return { json: { durum: 'parse_hatasi', ham_metin: raw, onay_gerekli: true } };\n}\n\nconst dusukGuven = data.guven_seviyesi === 'düşük' || data.guven_seviyesi === 'orta';\nconst notVar = data.notlar && data.notlar.trim().length > 0;\nconst belirsizAlanVar = data.belirsiz_alanlar && data.belirsiz_alanlar.length > 0;\n\nconst onayGerekli = dusukGuven || notVar || belirsizAlanVar || !data.onemli_tarih;\n\nreturn {\n  json: {\n    ...data,\n    onay_gerekli: onayGerekli\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        40
+      ],
+      "id": "parse-gemini-json",
+      "name": "Clean & Parse JSON"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "needs-conf",
+              "leftValue": "={{ $json.onay_gerekli }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "false"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        680,
+        40
+      ],
+      "id": "check-onay-gerekli",
+      "name": "Onay Gerekli mi?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://case-service:3001/api/v1/webhook/telegram",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": \"{{ $('Telegram Trigger').item.json.message.chat.id.toString() }}\",\n  \"message_id\": \"{{ $('Telegram Trigger').item.json.message.message_id.toString() }}\",\n  \"raw_text\": \"{{ $('Telegram Trigger').item.json.message.caption || '' }}\",\n  \"gemini_output\": {{ JSON.stringify($json) }},\n  \"action\": \"process\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        920,
+        -40
+      ],
+      "id": "direct-save-db",
+      "name": "Doğrudan Veritabanına Kaydet"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "=Dava Bilgisi Başarıyla Doğrudan Kaydedildi! ✅\n\nMüvekkil: {{ $json.client.fullName }}\nMahkeme: {{ $json.case.courtName }}\nDosya No: {{ $json.case.caseNumber }}\nDuruşma Tarihi: {{ $json.hearing ? $json.hearing.hearingDate : 'Belirtilmemiş' }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1140,
+        -40
+      ],
+      "id": "alert-direct-success",
+      "name": "Telegram: Doğrudan Başarılı Bildirimi"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://case-service:3001/api/v1/webhook/telegram",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": \"{{ $('Telegram Trigger').item.json.message.chat.id.toString() }}\",\n  \"message_id\": \"{{ $('Telegram Trigger').item.json.message.message_id.toString() }}\",\n  \"raw_text\": \"{{ $('Telegram Trigger').item.json.message.caption || '' }}\",\n  \"gemini_output\": {{ JSON.stringify($json) }},\n  \"action\": \"pending\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        920,
+        140
+      ],
+      "id": "save-pending-db",
+      "name": "Geçici Kayıt Oluştur (Pending)"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "=⚠️ Bazı bilgiler net okunamadı veya düşük güven seviyesinde. Lütfen kontrol edip onaylayın:\n\nBelge Türü: {{ $('Clean & Parse JSON').item.json.belge_turu }}\nEsas No: {{ $('Clean & Parse JSON').item.json.dosya_no }}\nMahkeme: {{ $('Clean & Parse JSON').item.json.mahkeme_kurum }}\nÖnemli Tarih: {{ $('Clean & Parse JSON').item.json.onemli_tarih }} (Açıklama: {{ $('Clean & Parse JSON').item.json.tarih_aciklamasi }})\nMüvekkil: {{ $('Clean & Parse JSON').item.json.taraf_bilgisi }}\nGüven Seviyesi: {{ $('Clean & Parse JSON').item.json.guven_seviyesi }}\nBelirsiz Alanlar: {{ $('Clean & Parse JSON').item.json.belirsiz_alanlar.join(', ') }}\nNotlar: {{ $('Clean & Parse JSON').item.json.notlar }}",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "Onayla ✅",
+                    "additionalFields": {
+                      "callback_data": "=onay_verildi:{{ $json.pending_case_id }}"
+                    }
+                  },
+                  {
+                    "text": "Reddet ❌",
+                    "additionalFields": {
+                      "callback_data": "=red_edildi:{{ $json.pending_case_id }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1140,
+        140
+      ],
+      "id": "send-telegram-approval",
+      "name": "Telegram: Onay İstemi Gönder"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $input.item.json.callback_query.data;\nconst parts = query.split(':');\nreturn {\n  json: {\n    action: parts[0], // onay_verildi veya red_edildi\n    pending_case_id: parts[1],\n    chat_id: $input.item.json.callback_query.message.chat.id.toString(),\n    callback_query_id: $input.item.json.callback_query.id\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        340
+      ],
+      "id": "parse-callback-data",
+      "name": "Parse Callback Query Data"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "is-approved",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "onay_verildi",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        460,
+        340
+      ],
+      "id": "check-callback-action",
+      "name": "Onay mı Red mi?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://case-service:3001/api/v1/webhook/telegram",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": \"{{ $json.chat_id }}\",\n  \"pending_case_id\": \"{{ $json.pending_case_id }}\",\n  \"action\": \"confirm\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        280
+      ],
+      "id": "api-confirm-pending",
+      "name": "API: Onayla ve Kaydet"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Callback Data').item.json.chat_id }}",
+        "text": "Verileriniz başarıyla veritabanına onaylanıp kaydedildi! ✅",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        920,
+        280
+      ],
+      "id": "telegram-alert-confirm",
+      "name": "Telegram: Kaydedildi Bildirimi"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://case-service:3001/api/v1/webhook/telegram",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": \"{{ $json.chat_id }}\",\n  \"pending_case_id\": \"{{ $json.pending_case_id }}\",\n  \"action\": \"discard\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        420
+      ],
+      "id": "api-discard-pending",
+      "name": "API: Reddet ve Sil"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Callback Data').item.json.chat_id }}",
+        "text": "Dava verisi reddedildi ve sistemden silindi. ❌",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        920,
+        420
+      ],
+      "id": "telegram-alert-discard",
+      "name": "Telegram: Reddedildi Bildirimi"
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Callback mi, Mesaj mı?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Callback mi, Mesaj mı?": {
+      "main": [
+        [
+          {
+            "node": "Analyze Document Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Parse Callback Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Document Image": {
+      "main": [
+        [
+          {
+            "node": "Clean & Parse JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean & Parse JSON": {
+      "main": [
+        [
+          {
+            "node": "Onay Gerekli mi?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Onay Gerekli mi?": {
+      "main": [
+        [
+          {
+            "node": "Doğrudan Veritabanına Kaydet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Geçici Kayıt Oluştur (Pending)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Doğrudan Veritabanına Kaydet": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Doğrudan Başarılı Bildirimi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Geçici Kayıt Oluştur (Pending)": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Onay İstemi Gönder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Callback Data": {
+      "main": [
+        [
+          {
+            "node": "Onay mı Red mi?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Onay mı Red mi?": {
+      "main": [
+        [
+          {
+            "node": "API: Onayla ve Kaydet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "API: Reddet ve Sil",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API: Onayla ve Kaydet": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Kaydedildi Bildirimi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API: Reddet ve Sil": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Reddedildi Bildirimi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

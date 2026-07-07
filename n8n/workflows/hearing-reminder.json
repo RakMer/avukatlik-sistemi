@@ -1,0 +1,57 @@
+{
+  "name": "Avukatlık Sistemi - Duruşma Hatırlatıcı",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "reminder",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        250,
+        250
+      ],
+      "id": "reminder-webhook",
+      "name": "Webhook Trigger",
+      "webhookId": "reminder-webhook-id"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.body.telegram_chat_id }}",
+        "text": "={{ $json.body.message }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        500,
+        250
+      ],
+      "id": "send-reminder-telegram",
+      "name": "Telegram: Hatırlatma Mesajı Gönder",
+      "credentials": {
+        "telegramApi": {
+          "id": "X4L9LM9ulXBwlrav",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Hatırlatma Mesajı Gönder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
